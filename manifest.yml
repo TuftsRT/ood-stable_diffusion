@@ -1,8 +1,7 @@
 ---
-name: "Stable Diffusion"
+name: "AI Image Generator (Stable Diffusion)"
 category: "Interactive Apps"
 subcategory: "AI"
 role: "batch_connect"
 description: |
-  This app launches a [Stable Diffusion WebUI server](https://github.com/AUTOMATIC1111/stable-diffusion-webui)
-  for use on Tufts HPC. It provides a user-friendly interface for generating images with Stable Diffusion.
+  Stable Diffusion is a generative AI tool that creates realistic or stylized images from text descriptions, enabling exploration of visual synthesis for art, design, and data visualization. This tool is not meant for personal use.
