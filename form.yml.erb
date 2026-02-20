@@ -1,3 +1,11 @@
+<%
+  show_qos = false
+  qos_options = (`sacctmgr show assoc where user=#{ENV['USER']} format=qos%1000 --noheader --parsable2 `).split(",")
+
+  if qos_options.include?("interactive")
+    show_qos = true
+  end
+%>
 ---
 cluster: "pax"
 
@@ -10,7 +18,10 @@ form:
   - version
   - outdir
   - modeldir
-  
+<% if show_qos  %>
+  - ta_qos
+<%end%>
+
 attributes:
 <%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/ai_tools.yml").indent(2) %>
 
@@ -40,3 +51,11 @@ attributes:
     help: |
           A selection of commonly used models are available at `/cluster/tufts/hpc/tools/stable-diffusion-webui/models/Stable-diffusion`.  
           You may also provide your own model path if preferred.
+  
+  ta_qos:
+    widget: check_box
+    label: "Request priority start"
+    help: "Limited to 1 running job at a time. (--qos=interactive)"
+    value: "interactive"
+    checked_value: "interactive"
+    unchecked_value: "normal"
