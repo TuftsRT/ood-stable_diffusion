@@ -2,6 +2,7 @@
 cluster: "pax"
 
 form:
+  - disclaimer_block
   - bc_num_hours
   - num_cores
   - num_memory
@@ -13,6 +14,15 @@ form:
   
 attributes:
 <%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/ai_tools.yml").indent(2) %>
+
+  disclaimer_block:
+    widget: text_field
+    class: "d-none"
+    skip_label: true
+<% if File.exist?("/etc/ood/config/apps/dashboard/batch_connect/partials/ai_disclaimer.md")  %>
+    help: |
+<%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/ai_disclaimer.md").indent(11) %>
+<%end%>
 
   version:
     label: Version
