@@ -15,13 +15,13 @@ form:
   - num_cores
   - num_memory
   - partition
-  - gpu_type 
+  - gpu_type
   - version
   - outdir
-  - modeldir
+  - modelroot
 <% if show_qos  %>
   - ta_qos
-<%end%>
+<% end %>
 
 attributes:
 <%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/ai_tools.yml").indent(2) %>
@@ -33,13 +33,13 @@ attributes:
 <% if File.exist?("/etc/ood/config/apps/dashboard/batch_connect/partials/ai_disclaimer.md")  %>
     help: |
 <%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/ai_disclaimer.md").indent(11) %>
-<%end%>
+<% end %>
 
   version:
     label: Version
     widget: select
     options:
-          - ["1.10.1"]
+      - ["1.10.1"]
 
   outdir:
     label: Output directory
@@ -48,20 +48,40 @@ attributes:
     required: true
     favorites:
       - /cluster/tufts
-      - /cluster/home 
+      - /cluster/home
 
-  modeldir:
-    label: Model directory
+  modelroot:
+    label: Model root directory
     widget: path_selector
-    value: "/cluster/tufts/hpc/tools/stable-diffusion-webui/models/Stable-diffusion"
+    value: "/cluster/tufts/hpc/tools/stable-diffusion-webui/models"
     directory: /cluster/tufts
     favorites:
       - /cluster/tufts
-      - /cluster/home 
+      - /cluster/home
     help: |
-          A selection of commonly used models are available at `/cluster/tufts/hpc/tools/stable-diffusion-webui/models/Stable-diffusion`.  
-          You may also provide your own model path if preferred.
-  
+      Select the root directory that contains your Stable Diffusion models.
+
+      Recommended organization under this directory:
+
+      - `Stable-diffusion/`: checkpoint models (`.ckpt`, `.safetensors`)
+      - `ControlNet/`: ControlNet models
+      - `Lora/`: LoRA models
+      - `ESRGAN/`: upscaling models
+      - `GFPGAN/`: face restoration models
+      - `Codeformer/`: face restoration models
+
+      Example layout:
+
+      - `/cluster/tufts/hpc/tools/stable-diffusion-webui/models/Stable-diffusion`
+      - `/cluster/tufts/hpc/tools/stable-diffusion-webui/models/ControlNet`
+      - `/cluster/tufts/hpc/tools/stable-diffusion-webui/models/Lora`
+      - `/cluster/tufts/hpc/tools/stable-diffusion-webui/models/ESRGAN`
+
+      A shared collection of commonly used checkpoint models is available under:
+      `/cluster/tufts/hpc/tools/stable-diffusion-webui/models/Stable-diffusion`
+
+      If you provide your own model root, please keep the same subfolder structure so the web UI can find models correctly.
+
   ta_qos:
     widget: check_box
     label: "Request priority start"

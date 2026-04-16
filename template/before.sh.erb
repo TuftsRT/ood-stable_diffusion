@@ -1,12 +1,29 @@
-# Generate and export your password
-create_passwd() {
-  tr -dc A-Za-z0-9 </dev/urandom | head -c "${1:-16}" || true
+
+# Helper: find a free TCP port
+find_port() {
+  python3 - <<'EOF'
+import socket
+s = socket.socket()
+s.bind(('', 0))
+port = s.getsockname()[1]
+s.close()
+print(port)
+EOF
 }
 
-host=$(hostname)
-port=$(find_port)
-PASSWORD=$(create_passwd 16)
+# Helper: generate a random alphanumeric password
+create_passwd() {
+  local length="${1:-16}"
+  tr -dc 'A-Za-z0-9' </dev/urandom | head -c "${length}"
+  echo
+}
 
-export host="$host"
-export password="$PASSWORD"
+export -f find_port
+export -f create_passwd
 
+# Batch Connect's basic template reads conn_params from the environment
+# prepared here before the main script starts.
+export host="$(hostname -s)"
+export port="$(find_port)"
+export passwd="$(create_passwd 16)"
+export password="${passwd}"

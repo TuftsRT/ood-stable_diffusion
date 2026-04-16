@@ -1,60 +1,219 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-OUTDIR=<%= context.outdir %>
-CACHEDIR=$OUTDIR/cache
-MODELDIR=<%= context.modeldir %>
-VER=<%= context.version %>
-CONFIG="$PWD/config.json"
-IMAGE="/cluster/tufts/ngc/images/stable-diffusion-webui-docker-${VER}.sif"
-export AppRepo="/cluster/tufts/hpc/tools/stable-diffusion-webui"
-PROGRAM="/app/stable-diffusion-webui/webui.sh"
-
-## Update output directories
-keys=(
-  "outdir_samples"
-  "outdir_txt2img_samples"
-  "outdir_img2img_samples"
-  "outdir_extras_samples"
-  "outdir_grids"
-  "outdir_txt2img_grids"
-  "outdir_img2img_grids"
-  "outdir_save"
-  "outdir_init_images"
-)
-
-for key in "${keys[@]}"; do
-  sed -i.bak "s#\"$key\": \".*\"#\"$key\": \"$OUTDIR\"#" "$CONFIG"
-done
+echo "Script starting..."
 
 module purge
-module load singularity
-module list
-mkdir -p $CACHEDIR
+module load singularity/4.3.4
 
-# Confirming port and host
-echo "Using port: $port"
-echo "Running on host: $host"
+echo
+echo "Currently Loaded Modules:"
+module list 2>&1 || true
+echo
+
+# -----------------------------
+# Basic settings
+# -----------------------------
+VER="<%= context.version %>"
+IMAGE="/cluster/tufts/apps/container/ngc/images/stable-diffusion-webui_${VER}.sif"
+
+OUTDIR="<%= context.outdir %>"
+MODELROOT="<%= context.modelroot %>"
+
+CACHEDIR="${OUTDIR}/cache"
+REPOSDIR="${OUTDIR}/repositories"
+TMPDIR_HOST="${OUTDIR}/tmp"
+CONFIG_STATES_DIR="${OUTDIR}/config_states"
+ANNOTATOR_DIR="${OUTDIR}/controlnet-annotator-downloads"
+UI_CONFIG_FILE="${OUTDIR}/ui-config.json"
+CONTROLNET_MODEL_DIR="${MODELROOT}/ControlNet"
+OUTPUTS_DIR="${OUTDIR}/outputs"
+TXT2IMG_DIR="${OUTPUTS_DIR}/txt2img-images"
+IMG2IMG_DIR="${OUTPUTS_DIR}/img2img-images"
+EXTRAS_DIR="${OUTPUTS_DIR}/extras-images"
+TXT2IMG_GRIDS_DIR="${OUTPUTS_DIR}/txt2img-grids"
+IMG2IMG_GRIDS_DIR="${OUTPUTS_DIR}/img2img-grids"
+INIT_IMAGES_DIR="${OUTPUTS_DIR}/init-images"
+SAVE_DIR="${OUTDIR}/log/images"
+
+mkdir -p "${OUTDIR}" "${CACHEDIR}" "${REPOSDIR}" "${TMPDIR_HOST}" \
+         "${CONFIG_STATES_DIR}" "${ANNOTATOR_DIR}" "${TXT2IMG_DIR}" \
+         "${IMG2IMG_DIR}" "${EXTRAS_DIR}" "${TXT2IMG_GRIDS_DIR}" \
+         "${IMG2IMG_GRIDS_DIR}" "${INIT_IMAGES_DIR}" "${SAVE_DIR}"
+
+cat > "${UI_CONFIG_FILE}" <<EOF
+{
+  "samples_save": true,
+  "samples_format": "png",
+  "grid_save": true,
+  "grid_format": "png",
+  "save_selected_only": true,
+  "outdir_samples": "${OUTPUTS_DIR}",
+  "outdir_txt2img_samples": "${TXT2IMG_DIR}",
+  "outdir_img2img_samples": "${IMG2IMG_DIR}",
+  "outdir_extras_samples": "${EXTRAS_DIR}",
+  "outdir_txt2img_grids": "${TXT2IMG_GRIDS_DIR}",
+  "outdir_img2img_grids": "${IMG2IMG_GRIDS_DIR}",
+  "outdir_save": "${SAVE_DIR}",
+  "outdir_init_images": "${INIT_IMAGES_DIR}",
+  "save_to_dirs": true,
+  "grid_save_to_dirs": true,
+  "use_save_to_dirs_for_ui": false
+}
+EOF
+
+# -----------------------------
+# Host / port / auth
+# These values come from before.sh.erb so Batch Connect can populate
+# connection.yml via conn_params before the card renders.
+# -----------------------------
+export host="${host:?host is not set}"
+export port="${port:?port is not set}"
+export passwd="${passwd:?passwd is not set}"
+export password="${password:-$passwd}"
+
+write_connection_yaml() {
+  # Open OnDemand's basic batch connect template reads connection.yml
+  # from the staged job working directory, not the Slurm submit directory.
+  cat > "${PWD}/connection.yml" <<EOF
+---
+host: ${host}
+port: ${port}
+passwd: ${password}
+EOF
+  echo "Wrote connection.yml to ${PWD} (host=${host} port=${port})"
+}
+
+# Write connection details as soon as we know them so the session card
+# can render the connection info while the service is still starting.
+write_connection_yaml
+
+echo "Using image:               ${IMAGE}"
+echo "Using output dir:          ${OUTDIR}"
+echo "Using cache dir:           ${CACHEDIR}"
+echo "Using repositories dir:    ${REPOSDIR}"
+echo "Using model root:          ${MODELROOT}"
+echo "Using ControlNet model dir:${CONTROLNET_MODEL_DIR}"
+echo "Using annotator dir:       ${ANNOTATOR_DIR}"
+echo "Using config_states dir:   ${CONFIG_STATES_DIR}"
+echo "Using UI config file:      ${UI_CONFIG_FILE}"
+echo "Running on host:           ${host}"
+echo "Using port:                ${port}"
+
+# -----------------------------
+# GPU / Python sanity check
+# -----------------------------
+singularity exec --nv "${IMAGE}" bash -lc '
+source /opt/sdwebui-venv/bin/activate
+python - <<EOF
+import os, sys, torch
+print("python:", sys.version)
+print("torch version:", torch.__version__)
+print("cuda available:", torch.cuda.is_available())
+print("cuda version:", torch.version.cuda)
+print("device count:", torch.cuda.device_count())
+print("CUDA_VISIBLE_DEVICES:", os.environ.get("CUDA_VISIBLE_DEVICES"))
+EOF
+'
+
+# -----------------------------
+# Launch webui
+# -----------------------------
+export SD_WEBUI_CMD="python launch.py \
+  --skip-install \
+  --skip-torch-cuda-test \
+  --skip-python-version-check \
+  --listen \
+  --api \
+  --no-gradio-queue \
+  --port ${port} \
+  --gradio-auth ${USER}:${password} \
+  --cors-allow-origins *.pax.tufts.edu \
+  --no-half \
+  --no-prompt-history \
+  --ui-settings-file /app/stable-diffusion-webui/ui-config.json \
+  --enable-insecure-extension-access"
+
+echo "COMMANDLINE_ARGS=${SD_WEBUI_CMD}"
 
 singularity exec \
-  -B "${AppRepo}:/app/stable-diffusion-webui" \
-  -B "${MODELDIR}:/app/stable-diffusion-webui/models/Stable-diffusion" \
-  -B "${CACHEDIR}: /app/stable-diffusion-webui/cache" \
-  --nv "$IMAGE" bash -c '
-    find /app/stable-diffusion-webui -type d -name .git | while read gitdir; do
-      repo_dir=$(dirname "$gitdir")
-      git config --global --add safe.directory "$repo_dir"
-    done &&
+  --nv \
+  -B "${OUTDIR}:${OUTDIR}" \
+  -B "${CACHEDIR}:/app/stable-diffusion-webui/cache" \
+  -B "${REPOSDIR}:/app/stable-diffusion-webui/repositories" \
+  -B "${TMPDIR_HOST}:/app/stable-diffusion-webui/tmp" \
+  -B "${CONFIG_STATES_DIR}:/app/stable-diffusion-webui/config_states" \
+  -B "${UI_CONFIG_FILE}:/app/stable-diffusion-webui/ui-config.json" \
+  -B "${MODELROOT}:/app/stable-diffusion-webui/models" \
+  -B "${ANNOTATOR_DIR}:/app/stable-diffusion-webui/extensions/sd-webui-controlnet/annotator/downloads" \
+  "${IMAGE}" bash -lc "
+    set -euo pipefail
+    source /opt/sdwebui-venv/bin/activate
+    cd /app/stable-diffusion-webui
 
-    /app/stable-diffusion-webui/webui.sh  \
-      --port "'"$port"'" \
-      --listen \
-      --skip-install \
-      --api \
-      --api-auth "'"$USER:$password"'" \
-      --gradio-auth "'"$USER:$password"'" \
-      --cors-allow-origins "*.pax.tufts.edu" \
-      --server-name "'"$host"'" \
-      --no-half \
-      --no-prompt-history \
-      --ui-settings-file "'"$CONFIG"'"
-  '
+    export HF_HOME=/app/stable-diffusion-webui/cache
+    export TRANSFORMERS_CACHE=/app/stable-diffusion-webui/cache
+    export TORCH_HOME=/app/stable-diffusion-webui/cache
+    export XDG_CACHE_HOME=/app/stable-diffusion-webui/cache
+    export TMPDIR=/app/stable-diffusion-webui/tmp
+
+    mkdir -p /app/stable-diffusion-webui/cache
+    mkdir -p /app/stable-diffusion-webui/repositories
+    mkdir -p /app/stable-diffusion-webui/tmp
+    mkdir -p /app/stable-diffusion-webui/config_states
+    mkdir -p /app/stable-diffusion-webui/extensions/sd-webui-controlnet/annotator/downloads
+
+    python -V
+    python - <<EOF
+import os, torch
+print('launch torch:', torch.__version__)
+print('launch cuda available:', torch.cuda.is_available())
+print('launch cuda version:', torch.version.cuda)
+print('launch tmpdir:', os.environ.get('TMPDIR'))
+EOF
+
+    ${SD_WEBUI_CMD}
+  " &
+
+PID=$!
+
+# -----------------------------
+# Wait for service — up to 20 minutes
+# Write connection.yml ONLY after port is confirmed open so that
+# OOD does not try to connect before the server is ready.
+# -----------------------------
+echo "Waiting for Stable Diffusion Web UI to start (timeout: 20 min)..."
+READY=0
+for i in {1..600}; do
+  if curl -sf --max-time 2 "http://${host}:${port}/login" > /dev/null 2>&1 || \
+     curl -sf --max-time 2 "http://${host}:${port}/" > /dev/null 2>&1; then
+    echo "Web UI HTTP is up on ${host}:${port} (waited $((i * 2))s)"
+    READY=1
+    break
+  fi
+  if nc -z "${host}" "${port}" 2>/dev/null; then
+    sleep 5
+    echo "Web UI TCP is up on ${host}:${port} (waited $((i * 2))s)"
+    READY=1
+    break
+  fi
+  sleep 2
+done
+
+if [ "${READY}" -eq 0 ]; then
+  echo "ERROR: Web UI did not start within 20 minutes. Check the logs above."
+  kill "${PID}" 2>/dev/null || true
+  exit 1
+fi
+
+# Refresh the file after readiness in case OOD checks it again later.
+write_connection_yaml
+
+echo "Connection info: host=${host} port=${port}"
+
+# -----------------------------
+# Keep job alive
+# -----------------------------
+wait ${PID}
+
+echo "Cleaning up..."
