@@ -1,11 +1,3 @@
-<%
-  show_qos = false
-  qos_options = (`sacctmgr show assoc where user=#{ENV['USER']} format=qos%1000 --noheader --parsable2 `).split(",")
-
-  if qos_options.include?("interactive")
-    show_qos = true
-  end
-%>
 ---
 cluster: "pax"
 
@@ -19,9 +11,7 @@ form:
   - version
   - outdir
   - modelroot
-<% if show_qos  %>
   - ta_qos
-<% end %>
 
 attributes:
 <%= File.read("/etc/ood/config/apps/dashboard/batch_connect/partials/ai_tools.yml").indent(2) %>
