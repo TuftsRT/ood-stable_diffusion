@@ -1,4 +1,5 @@
 <% require 'securerandom' %>
+---
 batch_connect:
   template: "basic"
   conn_params:
@@ -6,8 +7,6 @@ batch_connect:
     - port
     - passwd
 script:
-  email_on_started: true
-  email_on_terminated: true
   email: <%= ENV["USER"] %>@tufts.edu
   job_name: "OnDemand/stable-diffusion"
   wall_time: "<%= bc_num_hours.to_i * 3600 %>"
@@ -15,23 +14,26 @@ script:
     - "--cpus-per-task=<%= num_cores %>"
     - "--mem=<%= num_memory %>G"
     - "--nodes=1"
-    - "-p <%= partition %>"
+    - "--partition=<%= partition %>"
 <%
-  skip_gres = gpu_type == "none" || ["batch", "largemem", "rc2", "pangolinlab", "ruiguolab", "shushkovlab", "vaseylab"].include?(partition)
+  # gpu_type values come from the ai_tools.yml partial
+  skip_gres = !defined?(gpu_type) || gpu_type.to_s == "none"
 %>
 <% unless skip_gres %>
-  <% if gpu_type == "a100_40" %>
+  <% if gpu_type == "a100" %>
     - "--gres=gpu:a100:1"
     - "--constraint=a100-40G"
-  <% elsif gpu_type == "a100_80" %>
+  <% elsif gpu_type == "a100-80GB" %>
     - "--gres=gpu:a100:1"
     - "--constraint=a100-80G"
+  <% elsif gpu_type == "rtx_6000ada" %>
+    - "--gres=gpu:rtx_6000_ada:1"
   <% elsif gpu_type == "any" %>
     - "--gres=gpu:1"
   <% else %>
     - "--gres=gpu:<%= gpu_type %>:1"
   <% end %>
 <% end %>
-<% if defined?(ta_qos) && ta_qos == "interactive" %>
+    <%- if defined?(ta_qos) && ta_qos == "interactive" -%>
     - "--qos=<%= ta_qos %>"
-<% end %>
+    <%- end -%>
